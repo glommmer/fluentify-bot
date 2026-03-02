@@ -4,6 +4,7 @@ import re
 import textwrap
 from dotenv import load_dotenv
 from groq import AsyncGroq
+from keep_alive import keep_alive
 
 # Load environment variables
 load_dotenv()
@@ -196,4 +197,5 @@ async def on_message(message):
         await message.reply(corrected_text)
 
 
+keep_alive()
 client.run(TOKEN)
