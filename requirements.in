@@ -1,0 +1,4 @@
+# requirements.in
+discord.py
+python-dotenv
+groq
