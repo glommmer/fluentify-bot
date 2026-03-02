@@ -59,6 +59,7 @@ CRITICAL RULES:
 2) IGNORE TRIVIAL ERRORS: If the target sentence only has trivial issues (minor capitalization, a missing period at the end, an obvious single-character typo where meaning is clear), respond exactly with:
 Perfect!
 Do NOT produce any other text, punctuation, or explanation.
+If the Target Sentence is already natural, idiomatic, and appropriate for casual chat, output exactly Perfect! (do NOT repeat the sentence).
 
 3) CONTEXT USE (very important): Use the provided conversation context ONLY to:
    - choose correct tense/aspect (past/present/future),
@@ -142,6 +143,21 @@ def _sanitize_llm_output(raw_text: str) -> str:
     return lines[-1] if lines else ""
 
 
+def _normalize_for_compare(text: str) -> str:
+    """Normalize for 'no-op' detection (avoid pointless replies)."""
+    if not text:
+        return ""
+    t = text.strip()
+    # collapse whitespace
+    t = re.sub(r"\s+", " ", t)
+    # drop matching quotes
+    if len(t) >= 2 and ((t[0] == t[-1] == '"') or (t[0] == t[-1] == "'")):
+        t = t[1:-1].strip()
+    # treat trailing punctuation as trivial
+    t = re.sub(r"[.!?]+$", "", t).strip()
+    return t.lower()
+
+
 async def correct_english(target_text: str, context_text: str) -> str:
     """
     Attempts to correct an English sentence using multiple AI models with a fallback mechanism.
@@ -195,6 +211,12 @@ async def correct_english(target_text: str, context_text: str) -> str:
 
             raw_text = response.choices[0].message.content
             clean_text = _sanitize_llm_output(raw_text)
+
+            # If the model effectively returned the same thing, treat as Perfect! (reaction only)
+            if clean_text not in {"Perfect!", "Not English", "Error"}:
+                if _normalize_for_compare(clean_text) == _normalize_for_compare(target_text):
+                    return "Perfect!"
+
             return clean_text
 
         except asyncio.TimeoutError:
