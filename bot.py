@@ -54,18 +54,19 @@ Read the [Conversation Context] to resolve tense, pronouns, or references, but u
 {context_text}
 
 CRITICAL RULES:
-1) PRIMARY TASK: Evaluate and CORRECT the [Target Sentence] to a single natural-sounding American-English sentence. Preserve the original meaning, intent, tone, and any proper nouns. You may restructure freely to achieve a natural conversational phrasing, but do NOT add new factual content or change the user's meaning.
+1) PRIMARY TASK: Evaluate and CORRECT the [Target Sentence] to a single natural-sounding American-English sentence. Preserve the original meaning, communicative intent (e.g., a question MUST remain a question), tone, and any proper nouns. You may restructure freely, but do NOT add new factual content or change the user's meaning.
 
 2) IGNORE TRIVIAL ERRORS: If the target sentence only has trivial issues (minor capitalization, a missing period at the end, an obvious single-character typo where meaning is clear), respond exactly with:
 Perfect!
 Do NOT produce any other text, punctuation, or explanation.
 If the Target Sentence is already natural, idiomatic, and appropriate for casual chat, output exactly Perfect! (do NOT repeat the sentence).
 
-3) CONTEXT USE (very important): Use the provided conversation context ONLY to:
+3) CONTEXT USE (very important): Recognize that the context is a multi-user chat. Use the provided conversation context ONLY to:
+   - understand who is talking to whom,
    - choose correct tense/aspect (past/present/future),
    - select appropriate pronouns (he/she/they/it),
-   - and keep references coherent (who or what the sentence refers to).
-Do NOT rewrite the sentence to reflect extra information from the context, and do NOT invent or infer facts beyond what's necessary for tense/pronoun clarity.
+   - and keep references coherent.
+Do NOT merge the current speaker's sentence with previous speakers' thoughts. Do NOT invent or infer facts.
 
 4) CONVERSATIONAL & NATIVE: Always produce how a native American friend would say it in everyday speech. Avoid textbook/formal phrasing unless the user's original tone is clearly formal. Prefer natural contractions (I'm, don't, it's) and idiomatic collocations.
 
@@ -83,7 +84,7 @@ Do NOT add anything else.
 
 10) SLANG, NAMES, EMOJI: Preserve slang, nicknames, usernames, emojis, and proper nouns as-is unless they clearly prevent understanding. If a non-standard word makes the sentence awkward, replace it with a natural equivalent only if that preserves intent.
 
-11) OUTPUT CLEANLINESS: Your final output outside the <think> tags must be ONLY the final corrected sentence (or the exact token Perfect! or Not English). Do NOT wrap it in quotes. Do NOT add explanations.
+11) OUTPUT CLEANLINESS: Your final output outside the <think> tags must be ONLY the final corrected sentence (or the exact token Perfect! or Not English). Do NOT wrap it in quotes. Do NOT add the speaker's name or explanations.
 
 12) UNHANDLED OR UNCERTAIN: If the sentence is too fragmentary to correct without inventing meaning, make the minimal natural repair that preserves intent. If that's impossible, reply with Not English.
 
@@ -158,7 +159,11 @@ def _normalize_for_compare(text: str) -> str:
     return t.lower()
 
 
-async def correct_english(target_text: str, context_text: str) -> str:
+async def correct_english(
+    target_text: str,
+    context_text: str,
+    author_name: str
+) -> str:
     """
     Attempts to correct an English sentence using multiple AI models with a fallback mechanism.
 
@@ -181,6 +186,7 @@ async def correct_english(target_text: str, context_text: str) -> str:
     Args:
         target_text (str): The sentence that needs to be corrected.
         context_text (str): Additional context used to guide the correction.
+        author_name (str): The name of the author who wrote the message.
 
     Returns:
         str: The corrected sentence, or "Error" if all models fail.
@@ -201,7 +207,7 @@ async def correct_english(target_text: str, context_text: str) -> str:
                             },
                             {
                                 "role": "user",
-                                "content": f"[Target Sentence]\n{target_text}",
+                                "content": f"[Current Speaker: {author_name}]\n[Target Sentence]\n{target_text}",
                             },
                         ],
                         temperature=LLM_TEMPERATURE,
@@ -308,7 +314,11 @@ async def on_message(message):
     context_text = "\n".join(history_messages)
 
     # Send both the context and the current text to the AI
-    corrected_text = await correct_english(message.content, context_text)
+    corrected_text = await correct_english(
+        message.content, 
+        context_text, 
+        message.author.display_name,
+    )
 
     # await message.remove_reaction('👀', client.user)
 
