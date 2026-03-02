@@ -2,6 +2,7 @@ import discord
 import os
 import re
 import textwrap
+import asyncio
 from dotenv import load_dotenv
 from groq import AsyncGroq
 from keep_alive import keep_alive
@@ -20,18 +21,32 @@ client = discord.Client(intents=intents)
 # The specific channel where the bot operates
 TARGET_CHANNEL_NAME = "english-chat"
 
+# Editing tasks are best with low temperature (stability > creativity).
+LLM_TEMPERATURE = 0.2
+
+# Avoid hanging forever under transient API/network issues.
+LLM_TIMEOUT_SECONDS = 12
+
+# Cap context to prevent token/latency blowups in Discord chats.
+MAX_CONTEXT_CHARS = 1200
+MAX_HISTORY_MSG_CHARS = 220
+
+# Limit concurrent LLM calls to reduce rate-limit cascades & latency spikes.
+LLM_CONCURRENCY = 3
+LLM_SEMAPHORE = asyncio.Semaphore(LLM_CONCURRENCY)
+
 # Retry using preconfigured fallback models
 FALLBACK_MODELS = [
-    "qwen/qwen3-32b",
-    "openai/gpt-oss-20b",
-    "llama-3.1-8b-instant",
     "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3-32b",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-20b",
 ]
 
 # System prompt template
-SYSTEM_PROMPT_TEMPLATE = textwrap.dedent("""\
+SYSTEM_PROMPT_TEMPLATE = textwrap.dedent(
+    """\
 You are a native American English conversational editor whose sole job is to turn a single non-native English utterance into a natural, idiomatic American-English sentence suitable for casual conversation in a chat (e.g., Discord).  
 Read the [Conversation Context] to resolve tense, pronouns, or references, but use that context ONLY as described in rule 3.
 
@@ -67,31 +82,64 @@ Do NOT add anything else.
 
 10) SLANG, NAMES, EMOJI: Preserve slang, nicknames, usernames, emojis, and proper nouns as-is unless they clearly prevent understanding. If a non-standard word makes the sentence awkward, replace it with a natural equivalent only if that preserves intent.
 
-11) OUTPUT CLEANLINESS: Output ONLY the final corrected sentence (or the exact token Perfect! or Not English). Do NOT wrap it in quotes. Do NOT add explanations, alternatives, suggestions, markup, or extra whitespace. Trim leading/trailing spaces and newlines.
+11) OUTPUT CLEANLINESS: Your final output outside the <think> tags must be ONLY the final corrected sentence (or the exact token Perfect! or Not English). Do NOT wrap it in quotes. Do NOT add explanations.
 
 12) UNHANDLED OR UNCERTAIN: If the sentence is too fragmentary to correct without inventing meaning, make the minimal natural repair that preserves intent. If that's impossible, reply with Not English.
+
+INTERNAL PROCESS (do not output):
+Do an internal 2-step pass:
+- Step 1 (Grammar/Meaning): Fix basic grammar while preserving meaning.
+- Step 2 (Native Refinement): Rewrite into the most natural, idiomatic, casual American-English expression used in a Discord chat.
+IMPORTANT: Output ONLY the final sentence (or exactly Perfect! / Not English). Do NOT output your steps, reasoning, tags, or any other text.
 
 BEHAVIOR EXAMPLES (follow these patterns):
 - Target: I have a lot of thoughts in my brain.
   -> I have a lot on my mind.
+
 - Target: It's hard to me today.
   -> I'm having a hard time today.
+
 - Target: Are you a bot?
   -> Perfect!
-- Target: What do you want for present usually?
-  -> What kind of gifts do you usually like?
-- Target: I usually have beers everyday. So do today.
-  -> I usually have a beer every day, and today is no exception.
+
 - Target: (Korean) 저는 학교에 갑니다.
   -> Not English
 
 IMPLEMENTATION NOTES (for the model's internal use):
 - Favor a low-verbosity, high-precision rewrite style (short, idiomatic).
-- Do not output multiple alternatives — produce exactly one corrected sentence.
+- Do not output multiple alternatives — produce exactly one corrected sentence outside the think tags.
 - If context_text is empty, still correct the sentence using the rules above but do not guess unseen facts.
 
-Now, given the [Conversation Context] above and a single [Target Sentence], output the corrected sentence following these rules and nothing else."""
+Now, given the [Conversation Context] above and a single [Target Sentence], output ONLY the corrected sentence following these rules."""
 )
+
+
+def _trim_context(context_text: str) -> str:
+    """Hard-cap context length to protect latency/cost."""
+    if not context_text:
+        return ""
+    context_text = context_text.strip()
+    if len(context_text) <= MAX_CONTEXT_CHARS:
+        return context_text
+    # Keep the most recent tail (usually most relevant for tense/pronouns)
+    return context_text[-MAX_CONTEXT_CHARS:].lstrip()
+
+
+def _sanitize_llm_output(raw_text: str) -> str:
+    """
+    Make the output robust across models:
+    - remove any accidental <think>...</think>
+    - take the last non-empty line (in case the model adds prefaces)
+    - trim whitespace
+    """
+    if not raw_text:
+        return ""
+    text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
+    if not text:
+        return ""
+    # Use the last non-empty line to avoid "Sure:" / explanations leaking
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
 
 
 async def correct_english(target_text: str, context_text: str) -> str:
@@ -121,33 +169,47 @@ async def correct_english(target_text: str, context_text: str) -> str:
     Returns:
         str: The corrected sentence, or "Error" if all models fail.
     """
+    context_text = _trim_context(context_text)
     for model_name in FALLBACK_MODELS:
         try:
-            response = await client_ai.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT_TEMPLATE.format(
-                            context_text=context_text
-                        ),
-                    },
-                    {"role": "user", "content": f"[Target Sentence]\n{target_text}"},
-                ],
-                temperature=0.7,
-            )
+            async with LLM_SEMAPHORE:
+                response = await asyncio.wait_for(
+                    client_ai.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": SYSTEM_PROMPT_TEMPLATE.format(
+                                    context_text=context_text
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": f"[Target Sentence]\n{target_text}",
+                            },
+                        ],
+                        temperature=LLM_TEMPERATURE,
+                    ),
+                    timeout=LLM_TIMEOUT_SECONDS,
+                )
 
             raw_text = response.choices[0].message.content
-            clean_text = re.sub(
-                r"<think>.*?</think>", "", raw_text, flags=re.DOTALL
-            ).strip()
+            clean_text = _sanitize_llm_output(raw_text)
             return clean_text
+
+        except asyncio.TimeoutError:
+            print(
+                f"⏳ [{model_name}] Timeout after {LLM_TIMEOUT_SECONDS}s. Switching to the next model..."
+            )
+            continue
 
         except Exception as e:
             error_msg = str(e).lower()
             # When a rate limit (429) error occurs
             if "429" in error_msg or "rate limit" in error_msg:
-                print(f"⚠️ [{model_name}] API rate limit exceeded. Switching to the next model...")
+                print(
+                    f"⚠️ [{model_name}] API rate limit exceeded. Switching to the next model..."
+                )
                 continue  # Move on to the next model
             else:
                 # If other errors occur (e.g., network issues), try the next model
@@ -211,7 +273,13 @@ async def on_message(message):
     async for msg in message.channel.history(limit=limit, before=message):
         # Exclude correction messages sent by the bot and collect only user conversations
         if not msg.author.bot:
-            history_messages.append(f"{msg.author.display_name}: {msg.content}")
+            content = (msg.content or "").strip()
+            if not content:
+                continue
+            # Prevent single huge paste from bloating context
+            if len(content) > MAX_HISTORY_MSG_CHARS:
+                content = content[:MAX_HISTORY_MSG_CHARS].rstrip() + "…"
+            history_messages.append(f"{msg.author.display_name}: {content}")
 
     # Sort in chronological order (oldest first)
     history_messages.reverse()
@@ -222,13 +290,14 @@ async def on_message(message):
 
     # await message.remove_reaction('👀', client.user)
 
-    if "Not English" in corrected_text or corrected_text == "":
+    t = (corrected_text or "").strip()
+    if t == "Not English" or t == "":
         return
 
-    elif "Perfect!" in corrected_text:
+    elif t == "Perfect!":
         await message.add_reaction("✅")
 
-    elif "Error" in corrected_text:
+    elif t == "Error":
         pass
 
     else:
@@ -236,7 +305,7 @@ async def on_message(message):
         # await message.add_reaction('📝')
 
         # Reply directly in the main chat with only the corrected sentence
-        await message.reply(corrected_text)
+        await message.reply(t)
 
 
 keep_alive()
