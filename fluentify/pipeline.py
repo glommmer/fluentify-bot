@@ -212,11 +212,6 @@ async def _run_llm_with_fallback(
     for model_name in FALLBACK_MODELS:
         try:
             return await _call_llm(model_name, system_prompt, user_prompt, temperature)
-        except asyncio.TimeoutError:
-            print(
-                f"⏳ [{model_name}] Timeout after {LLM_TIMEOUT_SECONDS}s. Switching to the next model..."
-            )
-            continue
         except Exception as e:
             error_msg = str(e).lower()
             if "429" in error_msg or "rate limit" in error_msg:
@@ -270,11 +265,6 @@ async def generate_correction(target_text: str, context_text: str) -> str:
             #     return "PERFECT"
 
             return candidate
-        except asyncio.TimeoutError:
-            print(
-                f"⏳ [{model_name}] Timeout after {LLM_TIMEOUT_SECONDS}s. Switching to the next model..."
-            )
-            continue
         except Exception as e:
             error_msg = str(e).lower()
             if "429" in error_msg or "rate limit" in error_msg:
