@@ -28,69 +28,122 @@ Context usage:
 - Use context ONLY to understand the situation, tense, and pronouns.
 - Do NOT drag words from the previous context into the target sentence.
 
-Correction Rules:
-1. MINIMAL INTERVENTION: Fix ONLY what is unnatural or grammatically wrong.
-   Do NOT rephrase sentences that are already understandable.
-   Do NOT use slang, heavy colloquialisms, or overly casual expressions unless they appear in the original.
-2. PRESERVE CORE MEANING & PERSON: The author of the Target Sentence is identified by [ID of the current message author].
-   Do NOT change the original intent, emotion, or nuance.
-   Do NOT add information that is not in the original sentence.
-   Do NOT change who is speaking or who is being addressed.
-3. PRESERVE SENTENCE TYPE: Questions stay questions (?). Statements stay statements.
+High-level objective:
+- Make minimal, precise edits so the sentence becomes idiomatic, fluent, and natural in conversational American English while preserving meaning, speaker, and sentence type.
+- Prefer the most common phrasing a native speaker would actually use in texting / chat.
 
-EXAMPLES OF THE PERFECT BALANCE:
-- Target: "It's better what I call there."
-  Good: "I should probably call them." or "I'd better give them a call."
-  Bad (Too passive): "It's better if I call them."
+Core Rules (apply in order)
+1) MINIMAL INTERVENTION
+   - Change only what's necessary to make the sentence natural and grammatical.
+   - Do not add new facts, change the speaker, change recipients, or alter the intended emotion/nuance.
+   - Preserve sentence type: questions remain questions; statements remain statements.
 
-- Target: "The restaurant has not gotten my phone call."
-  Good: "The restaurant isn't answering." or "They're not picking up."
-  Bad (Too creative): "No wonder they never got my call."
+2) IDIOMATIC PREFERENCE (but not hard rules)
+   - If a grammatical sentence is technically correct but sounds stiff or non-native, replace it with a single, natural idiomatic alternative.
+   - Prefer contractions (I'm, you're, didn't) for conversational tone unless the original is clearly formal.
+   - Prefer common collocations and verbs used in everyday speech (e.g., "reply", "get back", "respond", "wear", "find something to wear") — but do not force a specific verb if the original choice is acceptable.
+   - Avoid slang or heavy colloquialisms unless they are already present or clearly appropriate.
 
-- Target: "God, why did you trash me??"
-  Good: "God, why are you doing this to me??" or "God, why did you ditch me??"
-  Bad (Too passive): "Why did you trash me?"
+3) PRESERVE MEANING & PERSON
+   - Do not add intensifiers, qualifiers, or new content that weren't present.
+   - Do not change tense beyond what's necessary for natural phrasing when tense is ambiguous in the original.
+   - Keep pronouns and references aligned with [current_user_id] and conversation context.
 
-- Target: "Should I go the restaurant again?"
-  Good: "Should I just go to that restaurant again?"
-  Bad (Changing person): "Want to grab food from that restaurant again?"
+4) FORMATTING & PUNCTUATION
+   - Maintain original punctuation intent (question mark, exclamation, ellipsis) unless correcting an obvious error.
+   - Keep capitalization and sentence-case consistent with conversational text (i.e., allow lower-case forms if present, keep capitalization if present).
 
-- Target: "I was going to leave early, but time passed so fast."
-  Good: "I was gonna leave early, but time flew by."
-  Bad (Adding new info): "I totally lost track of time and now it's too late to leave early."
+5) CONTEXT SENSITIVITY
+   - Use [conversation_history] only to resolve ambiguous pronouns, tense, or whether the message is formal vs casual.
+   - Do not copy wording from context into the corrected sentence.
 
-- Target: "Maybe I should skip breakfast because I don't have no time."
-  Good: "Maybe I should skip breakfast since I don't have any time."
-  Bad (Changing intent): "I'll just have to skip breakfast, I'm running super behind."
+OUTPUT RULES (strict)
+- If the target sentence is both grammatically correct AND already sounds like natural, idiomatic native speech for a typical American-English texting/chat context, output exactly the single word:
+  PERFECT
+  — and nothing else.
+  *Do not output PERFECT merely because the sentence is grammatically correct; it must also be naturally idiomatic (including contractions and common collocations where appropriate).*
 
-- Target: "The weather is nicer than I expected, though."
-  Good: "The weather's nicer than I thought it'd be, though."
-  Bad (Flipping nuance): "At least the weather's not as bad as I thought it'd be."
+- Otherwise, output EXACTLY ONE corrected sentence and NOTHING ELSE (no explanation, no alternatives, no extra whitespace, no quotes).
+  - The corrected sentence must preserve meaning, speaker, and sentence type.
+  - Do not add new facts, intensifiers, or information.
+  - Use contractions where natural; prefer concise, common phrasing.
 
-- Target: "I wanna have some food."
-  Good: "I wanna get something to eat."
-  Bad (Too slangy): "I'm so down for some grub."
+EDGE CASE GUIDANCE (apply as tie-breakers)
+- Short social checks:
+  - "Did you see my message?" is preferred over "Why didn't you answer me?" when the tone should be neutral/inquisitive.
+  - "What should I wear to a wedding?" is preferred over long, literal forms like "What kind of clothes are better to wear as a guest at a wedding?"
+- When original includes clear formality (e.g., "Dear Sir/Madam," or formal register), preserve formality and avoid forced contractions.
+- If the original contains obvious non-native literal translation (word-for-word structure, wrong collocations), produce a single idiomatic replacement.
+- Preserve intentional filler or emphasis in the original (e.g., "Like, ..." or "God, ...") — do not remove fillers.
 
-OUTPUT RULE:
-Output the single word "PERFECT" — and nothing else — if ANY of the following apply:
-- The sentence is grammatically correct AND already sounds like natural native speech.
-- The ONLY difference would be swapping a preposition or article where both are equally
-  correct (e.g. "thinking about" vs "thinking of", "on the weekend" vs "at the weekend").
-- The ONLY difference would be adding an intensifier not present in the original
-  (e.g. inserting "way", "really", "so", "just" where none existed).
-- The sentence contains an intentional colloquial filler
-  (e.g. "Like, ...", "I mean, ...", "You know, ...") — never remove fillers.
+EXAMPLES (Target → Desired — the "Good" is what the system should output; "Bad" shows unacceptable outputs)
+1)
+Target: "Why didn't you answer me?"
+Good: "Why didn't you reply?"
+Bad: "Why didn't you answer me?"  # (stiff) or "Why didn't you get back to me?" (alternative is ok but only one output is allowed)
 
-Do NOT output "Perfect!" just because a sentence is understandable.
-If a more natural idiomatic expression exists (e.g. "flying by" for "going so fast"),
-apply it — that is a valid correction.
+2)
+Target: "So you’re searching the cloth what you put."
+Good: "So you're trying to find something to wear?"
+Bad: "So you're looking for the clothes you wear."
 
-Otherwise, output EXACTLY ONE corrected sentence and nothing else. No explanation.
-Do NOT add words, intensifiers, or details that are not in the original sentence.
+3)
+Target: "What kind of cloth is better as a guest at the wedding place"
+Good: "What should I wear to a wedding?"
+Bad: "What kind of clothes are better to wear as a guest at a wedding?"
+
+4)
+Target: "I was going to leave early, but time passed so fast."
+Good: "I was gonna leave early, but time flew by."
+Bad: "I was going to leave early, but time passed so fast."  # (wordy / unidiomatic)
+
+5)
+Target: "Maybe I should skip breakfast because I don't have no time."
+Good: "Maybe I should skip breakfast since I don't have any time."
+Bad: "Maybe I should skip breakfast because I don't have no time."  # (double negative preserved - incorrect)
+
+6)
+Target: "I'm thinking of buying a MacBook or not."
+Good: "I'm thinking about getting a MacBook."
+Bad: "I'm thinking of buying a MacBook or not."  # (awkward trailing "or not")
+
+7)
+Target: "Should I go the restaurant again?"
+Good: "Should I just go to that restaurant again?"
+Bad: "Should I go the restaurant again?"  # (incorrect article/flow)
+
+8)
+Target: "The restaurant has not gotten my phone call."
+Good: "The restaurant isn't answering."
+Bad: "The restaurant has not gotten my phone call."  # (unnatural phrasing)
+
+9)
+Target: "I wanna have some food."
+Good: "I wanna get something to eat."
+Bad: "I'm so down for some grub."  # (too slangy / adds flavor not in original)
+
+10)
+Target: "The weather is nicer than I expected, though."
+Good: "The weather's nicer than I thought it'd be, though."
+Bad: "At least the weather's not as bad as I thought it'd be."  # (changes nuance)
+
+11)
+Target: "God, why did you trash me??"
+Good: "God, why are you doing this to me??"
+Bad: "Why did you trash me?"  # (loses voice)
+
+12)
+Target: "I've worked in Chungmuro."
+Good: "I've worked in Chungmuro."  # (PERFECT)
+Bad: "I worked in Chungmuro."  # (changes nuance)
+
+Evaluation hints for the generator (internal use only)
+- Prefer the shortest idiomatic change that restores native fluency.
+- If two corrections are equally good, choose the one that is more neutral and widely used in American conversational English.
+- Never return multiple alternatives or explanations.
 
 {context_text}
 """)
-
 
 async def _call_llm(
     model_name: str, system_prompt: str, user_prompt: str, temperature: float
