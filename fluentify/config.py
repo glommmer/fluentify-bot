@@ -1,6 +1,5 @@
 import os
 import asyncio
-import spacy
 from dotenv import load_dotenv
 from groq import AsyncGroq
 
